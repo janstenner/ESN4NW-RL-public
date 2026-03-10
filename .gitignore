@@ -1,0 +1,11 @@
+Manifest.toml
+
+frames/*
+video_output/*
+
+.vscode/*
+
+training_results.jld2
+optimal_trajectories.jld2
+
+old_results/*
