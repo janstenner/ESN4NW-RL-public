@@ -181,7 +181,7 @@ function ensure_nested_dict!(results, alg_name, il_type, reward_shaping)
 end
 
 trajectories_file = joinpath(@__DIR__, "optimal_trajectories.jld2")
-trajectories = FileIO.load(trajectories_file, "trajectories")
+trajectories = isfile(trajectories_file) ? FileIO.load(trajectories_file, "trajectories") : Dict{String, Any}()
 
 function collect_runs(
     n = 5;
@@ -270,6 +270,8 @@ function collect_runs(
 
                     if il_type == "IL"
                         train_params[:optimal_trainings] = default_params[alg_name]["optimal_trainings"]
+                        haskey(trajectories, alg_name) && haskey(trajectories[alg_name], rs_type) ||
+                            error("Missing optimal trajectory for $alg_name/$rs_type. Generate $trajectories_file first.")
                         global optimal_trajectory = trajectories[alg_name][rs_type]
                     else
                         train_params[:optimal_trainings] = 0

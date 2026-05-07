@@ -132,9 +132,9 @@ end
 initialize_setup()
 
 trajectories_file = joinpath(dirname(@__DIR__), "optimal_trajectories.jld2")
-trajectories = FileIO.load(trajectories_file, "trajectories")
+trajectories = isfile(trajectories_file) ? FileIO.load(trajectories_file, "trajectories") : Dict{String, Any}()
 rs_key = reward_shaping ? "with_RS" : "no_RS"
-optimal_trajectory = trajectories["DDPG"][rs_key]
+optimal_trajectory = get(get(trajectories, "DDPG", Dict{String, Any}()), rs_key, nothing)
 
 
 
