@@ -33,6 +33,20 @@ Active algorithms in `Minimal/` and `ModelBased/` are:
 - `PPO`
 - `DDPG`
 
+## Algorithms and Training Terms
+
+The paper evaluates actor-critic deep RL methods for continuous control:
+
+- `PPO`: Proximal Policy Optimization. PPO is an on-policy method; it updates from trajectories collected by the current policy.
+- `DDPG`: Deep Deterministic Policy Gradient. DDPG is an off-policy deterministic actor-critic method and learns from replay-buffer samples.
+- `SAC`: Soft Actor-Critic. SAC is an off-policy stochastic actor-critic method with entropy regularization.
+- `SAC2`: in this repository, `SAC2` denotes the SAC variant with the additional on-policy update routine described in the paper. It keeps replay-based SAC updates, but periodically refines the actor and critics on coherent recent rollout windows. In IL mode, the same routine is applied to random contiguous windows from the optimizer-generated expert corpus. This is meant to address the fixed-day credit-assignment problem where early actions are only evaluated through delayed completion feedback.
+
+The paper studies two mitigation strategies for delayed credit assignment:
+
+- `IL`: optimization-based imitation learning. The JuMP/IPOPT optimizer produces expert trajectories. During training, IL updates are not used only as one-time pretraining; they are repeatedly injected into the normal update loop.
+- `RS`: potential-based reward shaping. Set `reward_shaping = false` or `reward_shaping = true` in the respective training scripts, or pass `reward_shaping = ...` to `train(...)`, to toggle the potential-based reward shaping used in the paper. The shaping term uses workload progress as potential and redistributes completion-related feedback from the end of the day into intermediate steps.
+
 ## Setup
 
 Install Julia, then run from the repository root:
@@ -87,10 +101,27 @@ From `julia --project=.`:
 
 ```julia
 include("Minimal/SAC2/Minimal_SAC2.jl")
-train(; num_steps = 8_000, outer_loops = 1, optimal_trainings = 0, plot_runs = false)
+train(;
+    num_steps = 8_000,
+    inner_loops = 1,
+    outer_loops = 1,
+    optimal_trainings = 0,
+    reward_shaping = false,
+    plot_runs = false,
+)
 validate_agent()
 save_agent()
 ```
+
+The main training parameters are:
+
+- `num_steps`: minimum number of environment interaction steps per normal RL training block.
+- `inner_loops`: number of normal RL training blocks per outer loop. Each inner loop runs online rollout training for `num_steps`.
+- `outer_loops`: number of repeated train/evaluate cycles.
+- `optimal_trainings`: number of optimizer-trajectory IL update calls before the `inner_loops` normal RL blocks in each outer loop.
+- `reward_shaping`: toggles the potential-based reward shaping analyzed in the paper.
+
+So, with `outer_loops = 10`, `optimal_trainings = 1`, and `inner_loops = 3`, each outer loop first performs one `RL.update_IL(agent.policy, optimal_trajectory)` call and then performs three normal online RL training blocks.
 
 Other available scripts follow the same pattern:
 
@@ -121,6 +152,17 @@ collect_runs(
     rs_types = ["no_RS"],
 )
 ```
+
+`Minimal/generate_results.jl` uses the following default sweep parameters:
+
+| Algorithm | `inner_loops` | `outer_loops` | `outer_loops_IL` | `optimal_trainings` | `num_steps` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `SAC` | 1 | 1000 | 3000 | 160 | 8000 |
+| `SAC2` | 3 | 1000 | 3000 | 1 | 8000 |
+| `PPO` | 3 | 500 | 5000 | 1 | 8000 |
+| `DDPG` | 1 | 1000 | 0 | 160 | 8000 |
+
+`outer_loops_IL` is used instead of `outer_loops` for IL runs. `SAC` and `DDPG` use higher `optimal_trainings` values because their IL updates are off-policy replay-style batch updates; each call consumes fewer coherent expert samples than the on-policy-style SAC2 and PPO updates. SAC2 and PPO therefore use `optimal_trainings = 1` with larger trajectory windows, while SAC and DDPG use `160` smaller off-policy update calls.
 
 Merge sharded result files into `Minimal/training_results.jld2`:
 
@@ -160,7 +202,14 @@ Usage mirrors `Minimal/`:
 
 ```julia
 include("ModelBased/SAC2/ModelBased_SAC2.jl")
-train(; num_steps = 8_000, outer_loops = 1, optimal_trainings = 0, plot_runs = false)
+train(;
+    num_steps = 8_000,
+    inner_loops = 1,
+    outer_loops = 1,
+    optimal_trainings = 0,
+    reward_shaping = false,
+    plot_runs = false,
+)
 validate_agent()
 save_agent()
 ```
@@ -187,6 +236,17 @@ collect_runs(
     rs_types = ["no_RS"],
 )
 ```
+
+`ModelBased/generate_results.jl` uses the following default sweep parameters:
+
+| Algorithm | `inner_loops` | `outer_loops` | `outer_loops_IL` | `optimal_trainings` | `num_steps` |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `SAC` | 1 | 1000 | 2000 | 160 | 8000 |
+| `SAC2` | 3 | 1000 | 3000 | 1 | 8000 |
+| `PPO` | 3 | 500 | 5000 | 1 | 8000 |
+| `DDPG` | 1 | 1000 | 2000 | 160 | 8000 |
+
+The interpretation is the same as in `Minimal/`: `optimal_trainings` controls how many IL update calls are inserted before the normal `inner_loops`, and `outer_loops_IL` is the outer-loop count used for IL configurations.
 
 Regenerate optimizer trajectories when needed:
 
