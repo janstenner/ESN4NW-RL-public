@@ -6,16 +6,13 @@ trajectories_file = joinpath(@__DIR__, "optimal_trajectories.jld2")
 
 optimal_episodes = 1_000
 
-const TRAJECTORY_ALGORITHMS = ["SAC", "SAC2", "DDPG", "PPO", "PPO2", "PPO3", "FlowPPO"]
+const TRAJECTORY_ALGORITHMS = ["SAC", "SAC2", "DDPG", "PPO"]
 const TRAJECTORY_MODES = ("no_RS", "with_RS")
 const TRAJECTORY_REQUIRED_KEYS = Dict(
     "SAC" => (:state, :action, :reward, :terminated, :truncated, :next_state),
     "SAC2" => (:state, :action, :reward, :terminated, :truncated, :next_state),
     "DDPG" => (:state, :action, :reward, :terminated, :truncated),
     "PPO" => (:state, :action, :action_log_prob, :reward, :terminated, :truncated, :next_state),
-    "PPO2" => (:state, :action, :action_log_prob, :reward, :explore_mod, :terminated, :truncated, :next_state),
-    "PPO3" => (:state, :action, :action_log_prob, :reward, :explore_mod, :terminated, :truncated, :next_state),
-    "FlowPPO" => (:state, :action, :action_log_prob, :reward, :explore_mod, :terminated, :truncated, :next_state),
 )
 
 function initialize_trajectories_dict()
@@ -48,6 +45,17 @@ function trajectories_up_to_date(dict)
         end
     end
     return true
+end
+
+function prune_inactive_trajectories!(dict)
+    changed = false
+    for alg in collect(keys(dict))
+        if !(alg in TRAJECTORY_ALGORITHMS)
+            delete!(dict, alg)
+            changed = true
+        end
+    end
+    return changed
 end
 
 function create_sac_like_trajectory(capacity, state_dim, action_dim, n_envs)
@@ -103,6 +111,9 @@ end
 # Load or initialize trajectories dictionary
 if isfile(trajectories_file)
     trajectories = FileIO.load(trajectories_file, "trajectories")
+    if prune_inactive_trajectories!(trajectories)
+        FileIO.save(trajectories_file, "trajectories", trajectories)
+    end
     println("Loaded existing trajectories file")
 else
     trajectories = initialize_trajectories_dict()
@@ -131,14 +142,6 @@ function generate_optimal_trajectories(; steps = 10_000)
     ppo_trajectory_no_rs = create_ppo_like_trajectory(capacity, state_dim, action_dim_local, n_envs)
     ppo_trajectory_rs = create_ppo_like_trajectory(capacity, state_dim, action_dim_local, n_envs)
 
-    # PPO2 / PPO3 / FlowPPO
-    ppo2_trajectory_no_rs = create_ppo_like_trajectory(capacity, state_dim, action_dim_local, n_envs; with_explore_mod = true)
-    ppo2_trajectory_rs = create_ppo_like_trajectory(capacity, state_dim, action_dim_local, n_envs; with_explore_mod = true)
-    ppo3_trajectory_no_rs = create_ppo_like_trajectory(capacity, state_dim, action_dim_local, n_envs; with_explore_mod = true)
-    ppo3_trajectory_rs = create_ppo_like_trajectory(capacity, state_dim, action_dim_local, n_envs; with_explore_mod = true)
-    flowppo_trajectory_no_rs = create_ppo_like_trajectory(capacity, state_dim, action_dim_local, n_envs; with_explore_mod = true)
-    flowppo_trajectory_rs = create_ppo_like_trajectory(capacity, state_dim, action_dim_local, n_envs; with_explore_mod = true)
-
     global optimal_rewards = Float64[]
 
     for i in 1:optimal_episodes
@@ -158,8 +161,6 @@ function generate_optimal_trajectories(; steps = 10_000)
 
             state_before = env.state
             last_action_log_prob = ones(Float32, n_envs) .* 0.1
-            explore_mod = ones(Float32, n_envs)
-
             # SAC / SAC2
             push!(sac_trajectory_no_rs; state = env.state, action = action)
             push!(sac_trajectory_rs; state = env.state, action = action)
@@ -180,44 +181,6 @@ function generate_optimal_trajectories(; steps = 10_000)
                 state = env.state,
                 action = action,
                 action_log_prob = last_action_log_prob,
-            )
-
-            # PPO2 / PPO3 / FlowPPO
-            push!(ppo2_trajectory_no_rs;
-                state = env.state,
-                action = action,
-                action_log_prob = last_action_log_prob,
-                explore_mod = explore_mod,
-            )
-            push!(ppo2_trajectory_rs;
-                state = env.state,
-                action = action,
-                action_log_prob = last_action_log_prob,
-                explore_mod = explore_mod,
-            )
-            push!(ppo3_trajectory_no_rs;
-                state = env.state,
-                action = action,
-                action_log_prob = last_action_log_prob,
-                explore_mod = explore_mod,
-            )
-            push!(ppo3_trajectory_rs;
-                state = env.state,
-                action = action,
-                action_log_prob = last_action_log_prob,
-                explore_mod = explore_mod,
-            )
-            push!(flowppo_trajectory_no_rs;
-                state = env.state,
-                action = action,
-                action_log_prob = last_action_log_prob,
-                explore_mod = explore_mod,
-            )
-            push!(flowppo_trajectory_rs;
-                state = env.state,
-                action = action,
-                action_log_prob = last_action_log_prob,
-                explore_mod = explore_mod,
             )
 
             compute_left_before = env.y[1]
@@ -271,34 +234,6 @@ function generate_optimal_trajectories(; steps = 10_000)
             push!(ppo_trajectory_no_rs[:next_state], env.state)
             push!(ppo_trajectory_rs[:next_state], env.state)
 
-            # PPO2 / PPO3 / FlowPPO
-            push!(ppo2_trajectory_no_rs[:reward], [r])
-            push!(ppo2_trajectory_rs[:reward], [r_shaped])
-            push!(ppo2_trajectory_no_rs[:terminated], term)
-            push!(ppo2_trajectory_rs[:terminated], term)
-            push!(ppo2_trajectory_no_rs[:truncated], trunc)
-            push!(ppo2_trajectory_rs[:truncated], trunc)
-            push!(ppo2_trajectory_no_rs[:next_state], env.state)
-            push!(ppo2_trajectory_rs[:next_state], env.state)
-
-            push!(ppo3_trajectory_no_rs[:reward], [r])
-            push!(ppo3_trajectory_rs[:reward], [r_shaped])
-            push!(ppo3_trajectory_no_rs[:terminated], term)
-            push!(ppo3_trajectory_rs[:terminated], term)
-            push!(ppo3_trajectory_no_rs[:truncated], trunc)
-            push!(ppo3_trajectory_rs[:truncated], trunc)
-            push!(ppo3_trajectory_no_rs[:next_state], env.state)
-            push!(ppo3_trajectory_rs[:next_state], env.state)
-
-            push!(flowppo_trajectory_no_rs[:reward], [r])
-            push!(flowppo_trajectory_rs[:reward], [r_shaped])
-            push!(flowppo_trajectory_no_rs[:terminated], term)
-            push!(flowppo_trajectory_rs[:terminated], term)
-            push!(flowppo_trajectory_no_rs[:truncated], trunc)
-            push!(flowppo_trajectory_rs[:truncated], trunc)
-            push!(flowppo_trajectory_no_rs[:next_state], env.state)
-            push!(flowppo_trajectory_rs[:next_state], env.state)
-
             n += 1
         end
     end
@@ -315,13 +250,6 @@ function generate_optimal_trajectories(; steps = 10_000)
     trajectories["DDPG"]["with_RS"] = ddpg_trajectory_rs
     trajectories["PPO"]["no_RS"] = ppo_trajectory_no_rs
     trajectories["PPO"]["with_RS"] = ppo_trajectory_rs
-    trajectories["PPO2"]["no_RS"] = ppo2_trajectory_no_rs
-    trajectories["PPO2"]["with_RS"] = ppo2_trajectory_rs
-    trajectories["PPO3"]["no_RS"] = ppo3_trajectory_no_rs
-    trajectories["PPO3"]["with_RS"] = ppo3_trajectory_rs
-    trajectories["FlowPPO"]["no_RS"] = flowppo_trajectory_no_rs
-    trajectories["FlowPPO"]["with_RS"] = flowppo_trajectory_rs
-
     FileIO.save(trajectories_file, "trajectories", trajectories)
     println("\nAll optimal trajectories generated and saved to $trajectories_file")
 end

@@ -56,6 +56,7 @@ function merge_results_into!(target_results, source_results)
             end
             continue
         end
+        alg_name in ACTIVE_ALGORITHM_NAMES || continue
 
         for il_type in keys(source_results[alg_name])
             for rs_type in keys(source_results[alg_name][il_type])
@@ -139,16 +140,30 @@ algorithms = [
     ("SAC", "Minimal/SAC/Minimal_SAC.jl"),
     ("SAC2", "Minimal/SAC2/Minimal_SAC2.jl"),
     ("PPO", "Minimal/PPO/Minimal_PPO.jl"),
-    ("PPO3", "Minimal/PPO3/Minimal_PPO3.jl"),
     ("DDPG", "Minimal/DDPG/Minimal_DDPG.jl")
 ]
+const ACTIVE_ALGORITHM_NAMES = first.(algorithms)
+
+function prune_inactive_results!(results)
+    changed = false
+    for alg_name in collect(keys(results))
+        if alg_name == "Optimal" || alg_name == "Untrained" || alg_name in ACTIVE_ALGORITHM_NAMES
+            continue
+        end
+        delete!(results, alg_name)
+        changed = true
+    end
+    return changed
+end
+
+if prune_inactive_results!(results)
+    FileIO.save(results_file, "results", results)
+end
 
 # algorithms = [
 #     ("SAC", "Minimal/SAC/Minimal_SAC.jl"),
 #     ("SAC2", "Minimal/SAC2/Minimal_SAC2.jl"),
 #     ("PPO", "Minimal/PPO/Minimal_PPO.jl"),
-#     ("PPO2", "Minimal/PPO2/Minimal_PPO2.jl"),
-#     ("PPO3", "Minimal/PPO3/Minimal_PPO3.jl"),
 #     ("DDPG", "Minimal/DDPG/Minimal_DDPG.jl")
 # ]
 
@@ -291,20 +306,6 @@ function collect_runs(
                             "optimal_trainings" => 1,
                             "num_steps" => 8_000
                         ),
-                        "PPO2" => Dict(
-                            "inner_loops" => 3,
-                            "outer_loops" => 500,
-                            "outer_loops_IL" => 1000,
-                            "optimal_trainings" => 3,
-                            "num_steps" => 8_000
-                        ),
-                        "PPO3" => Dict(
-                            "inner_loops" => 3,
-                            "outer_loops" => 500,
-                            "outer_loops_IL" => 1000,
-                            "optimal_trainings" => 3,
-                            "num_steps" => 8_000
-                        ),
                         "DDPG" => Dict(
                             "inner_loops" => 1,
                             "outer_loops" => 1000,
@@ -394,14 +395,11 @@ function clean_reconstructed_policies!()
     for alg_name in keys(results)
         # Skip the Optimal results as they don't have policies
         alg_name == "Optimal" && continue
+        alg_name in ACTIVE_ALGORITHM_NAMES || continue
         
         # Expected policy type for each algorithm
         expected_type = if alg_name == "PPO"
             PPOPolicy
-        elseif alg_name == "PPO2"
-            PPOPolicy2
-        elseif alg_name == "PPO3"
-            PPOPolicy3
         elseif alg_name == "SAC"
             SACPolicy
         elseif alg_name == "DDPG"
@@ -606,6 +604,7 @@ function plot_test_comparison(; current = false)
 
     for alg_name in keys(results)
         (alg_name == "Optimal" || alg_name == "Untrained") && continue
+        alg_name in ACTIVE_ALGORITHM_NAMES || continue
 
         for il_type in keys(results[alg_name])
             for rs_type in keys(results[alg_name][il_type])
@@ -693,10 +692,6 @@ function plot_test_comparison(; current = false)
                 [184, 71, 82]
             elseif alg == "PPO"
                 [98, 150, 209]
-            elseif alg == "PPO2"
-                [139, 173, 115]
-            elseif alg == "PPO3"
-                [65, 105, 225]
             else
                 [168, 119, 175]
             end
@@ -855,6 +850,7 @@ function plot_validation_comparison(; current = false)
     for alg_name in keys(results)
         # Skip the Optimal results as they're handled separately
         (alg_name == "Optimal" || alg_name == "Untrained") && continue
+        alg_name in ACTIVE_ALGORITHM_NAMES || continue
         
         for il_type in keys(results[alg_name])
             for rs_type in keys(results[alg_name][il_type])
@@ -955,10 +951,6 @@ function plot_validation_comparison(; current = false)
                 [184, 71, 82]    # Richer burgundy
             elseif alg == "PPO"
                 [98, 150, 209]   # Brighter steel blue
-            elseif alg == "PPO2"
-                [139, 173, 115]  # Livelier sage green
-            elseif alg == "PPO3"
-                [65, 105, 225]   # Royal blue
             else  # DDPG
                 [168, 119, 175]  # Brighter purple
             end
