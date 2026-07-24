@@ -271,7 +271,9 @@ function sample_grid_price_day(; season::AbstractString = "Winter",
     end
 
     if normalize_by_global_factor
-        out ./= grid_price_norm_factor()
+        out ./= ( grid_price_norm_factor() / 4 )
+        out .-= 0.25f0
+        clamp!(out, 0f0, 1f0)
     end
 
     return out

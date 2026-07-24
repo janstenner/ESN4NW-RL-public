@@ -155,7 +155,7 @@ function generate_validation_set(;n = 200)
     global set = []
 
     for i in 1:n
-        wind, ct = generate_wind()
+        wind, ct = generate_wind(; use_generated=false)
         gp = generate_grid_price()
         push!(set, (wind, gp, ct))
     end
