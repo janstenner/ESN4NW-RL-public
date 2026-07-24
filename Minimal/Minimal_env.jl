@@ -1262,7 +1262,7 @@ function train(use_random_init = true; visuals = false, num_steps = 10_000, inne
                 if @isdefined(validate_agent)
                     current_score = mean(validate_agent())
 
-                    if !isempty(validation_scores) && current_score > maximum(validation_scores)
+                    if isempty(validation_scores) || current_score > maximum(validation_scores)
                         agent_save = deepcopy(agent)
                     end
                     

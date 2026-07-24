@@ -411,7 +411,7 @@ function calculate_day(action, env, step = nothing; reward_shaping = reward_shap
 
     compute_power = 0.0
     for i in 1:n_windCORES
-        compute_power += action[i]*0.01/n_windCORES
+        compute_power += action[i]*0.005/n_windCORES
     end
 
     compute_left_before = compute_left

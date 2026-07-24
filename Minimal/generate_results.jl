@@ -519,8 +519,10 @@ function test_agent(; optimizer = false, render = false)
     return test_rewards
 end
 
-function plot_test_comparison(; current = false)
+function plot_test_comparison(; current = false, use_validation_selection = true)
     ensure_test_set!()
+    selection_basis = use_validation_selection ? "Validation" : "Test"
+    println("Seed selection basis: $selection_basis")
 
     if !@isdefined(results)
         if isfile(results_file)
@@ -613,6 +615,7 @@ function plot_test_comparison(; current = false)
                 config_scores = Dict{Int, Vector{Float32}}()
                 config_means = Dict{Int, Float64}()
                 config_timelines = Dict{Int, Vector{Float32}}()
+                config_validation_scores = Dict{Int, Float64}()
 
                 for seed in keys(results[alg_name][il_type][rs_type])
                     saved_policy = results[alg_name][il_type][rs_type][seed]["agent_save_policy"]
@@ -629,25 +632,48 @@ function plot_test_comparison(; current = false)
 
                     config_scores[seed] = scores
                     config_means[seed] = mean(scores)
-                    config_timelines[seed] = results[alg_name][il_type][rs_type][seed]["validation_scores"]
+                    validation_timeline = results[alg_name][il_type][rs_type][seed]["validation_scores"]
+                    config_timelines[seed] = validation_timeline
+                    if !isempty(validation_timeline)
+                        config_validation_scores[seed] = maximum(validation_timeline)
+                    elseif use_validation_selection
+                        println("Excluding $(alg_name)-$(il_type)-$(rs_type)-seed$(seed) from Validation selection (no validation scores saved)")
+                    end
                 end
 
-                if !isempty(config_means)
-                    best_mean = maximum(values(config_means))
-                    best_seeds = sort([
-                        seed for (seed, seed_mean) in config_means
-                        if isapprox(seed_mean, best_mean; atol = 1e-10, rtol = 1e-8)
-                    ])
+                selection_scores = use_validation_selection ? config_validation_scores : config_means
+                if !isempty(selection_scores)
+                    best_selection_score = maximum(values(selection_scores))
+                    best_seeds = if use_validation_selection
+                        sort([
+                            seed for (seed, selection_score) in selection_scores
+                            if selection_score == best_selection_score
+                        ])
+                    else
+                        sort([
+                            seed for (seed, selection_score) in selection_scores
+                            if isapprox(selection_score, best_selection_score; atol = 1e-10, rtol = 1e-8)
+                        ])
+                    end
                     if isempty(best_seeds)
-                        best_seeds = [argmax(config_means)]
+                        best_seeds = use_validation_selection ?
+                            [minimum(keys(selection_scores))] :
+                            [argmax(config_means)]
                     end
                     best_seed = first(best_seeds)
                     key = "$(alg_name)-$(il_type)-$(rs_type)"
+                    if use_validation_selection
+                        println("Selected $key seed $best_seed by Validation (maximum validation score = $(config_validation_scores[best_seed]))")
+                    else
+                        println("Selected $key seed $best_seed by Test (mean test score = $(config_means[best_seed]))")
+                    end
                     best_test_results[key] = (
                         config_scores[best_seed],
                         config_timelines[best_seed],
                         best_seeds
                     )
+                elseif use_validation_selection && !isempty(config_means)
+                    println("No seed selected for $(alg_name)-$(il_type)-$(rs_type): no validation scores saved")
                 end
             end
         end
@@ -717,9 +743,9 @@ function plot_test_comparison(; current = false)
         if isnothing(seeds) || isempty(seeds)
             key
         elseif length(seeds) == 1
-            "$(key) (seed=$(seeds[1]))"
+            "$(key) (seed=$(seeds[1]), selected by $selection_basis)"
         else
-            "$(key) (seeds=$(join(seeds, ", ")))"
+            "$(key) (seed=$(first(seeds)), selected by $selection_basis; tied seeds=$(join(seeds, ", ")))"
         end
     end
 

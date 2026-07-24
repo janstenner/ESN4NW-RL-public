@@ -81,7 +81,7 @@ antithetic_mean_samples = 4
 on_policy_n_batches = 100
 on_policy_epochs = 3
 
-reward_shaping = false
+reward_shaping = true
 
 wind_only = false
 
